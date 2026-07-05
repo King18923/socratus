@@ -1,223 +1,302 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import ePub, { Rendition, Book as EPubBook, Location } from "epubjs";
-import { type Book, db } from "@/lib/db";
+import ePub, { type Rendition, type Book as EPubBook } from "epubjs";
+import { type Book } from "@/lib/db";
 import { updateReadingProgress, useHighlights, addHighlight } from "@/hooks/use-db";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Menu, List } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { List } from "lucide-react";
 
 interface EPUBReaderProps {
   book: Book;
   theme: "day" | "sepia" | "night";
 }
 
+const THEME_STYLES = {
+  day: {
+    body: { background: "transparent !important", color: "#2d2621" },
+    "::selection": { background: "rgba(255, 212, 0, 0.4)" },
+  },
+  sepia: {
+    body: { background: "transparent !important", color: "#3a2a18" },
+    "::selection": { background: "rgba(255, 212, 0, 0.4)" },
+  },
+  night: {
+    body: { background: "transparent !important", color: "#d4cfc9" },
+    "::selection": { background: "rgba(255, 212, 0, 0.4)" },
+  },
+};
+
 export function EPUBReader({ book, theme }: EPUBReaderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<Rendition | null>(null);
-  const bookRef = useRef<EPubBook | null>(null);
+  const epubBookRef = useRef<EPubBook | null>(null);
+
   const [chapterTitle, setChapterTitle] = useState("");
   const [progress, setProgress] = useState("");
-  const [toc, setToc] = useState<any[]>([]);
-  
-  // Highlight popover state
-  const [selection, setSelection] = useState<{ cfiRange: string; contents: any; rect: DOMRect | null } | null>(null);
+  const [toc, setToc] = useState<{ label: string; href: string }[]>([]);
+  const [selection, setSelection] = useState<{
+    cfiRange: string;
+    contents: any;
+    rect: DOMRect | null;
+  } | null>(null);
 
   const highlights = useHighlights(book.id!);
 
-  const applyTheme = useCallback((rendition: Rendition) => {
-    const themes = rendition.themes;
-    themes.register("day", {
-      body: { background: "transparent", color: "#2d2621" },
-      "::selection": { background: "rgba(255, 212, 0, 0.4)" }
-    });
-    themes.register("sepia", {
-      body: { background: "transparent", color: "#3a2a18" },
-      "::selection": { background: "rgba(255, 212, 0, 0.4)" }
-    });
-    themes.register("night", {
-      body: { background: "transparent", color: "#cccccc" },
-      "::selection": { background: "rgba(255, 212, 0, 0.4)" }
-    });
-    themes.select(theme);
-  }, [theme]);
+  // Re-apply highlights whenever the list changes or the rendition relocates
+  const applyHighlights = useCallback(
+    (rendition: Rendition, hls: typeof highlights) => {
+      if (!hls) return;
+      hls.forEach((hl) => {
+        try {
+          rendition.annotations.add(
+            "highlight",
+            hl.cfi,
+            {},
+            undefined,
+            "hl",
+            { fill: hl.color, "fill-opacity": "0.35" }
+          );
+        } catch {
+          // annotation may already exist or CFI may be out of current section
+        }
+      });
+    },
+    []
+  );
 
-  // Handle Highlights
   useEffect(() => {
     if (!renditionRef.current || !highlights) return;
-    const rendition = renditionRef.current;
-    
-    // Clear old highlights (simple approach)
-    // rendition.annotations.clear();
-    
-    highlights.forEach(hl => {
-      try {
-        rendition.annotations.add("highlight", hl.cfi, {}, undefined, "hl", { fill: hl.color, "fill-opacity": "0.3" });
-      } catch (e) {
-        console.error("Failed to add highlight", e);
-      }
-    });
-  }, [highlights]);
+    applyHighlights(renditionRef.current, highlights);
+  }, [highlights, applyHighlights]);
+
+  // Theme changes after initial render
+  useEffect(() => {
+    if (!renditionRef.current) return;
+    renditionRef.current.themes.select(theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Clone the buffer — epubjs consumes it
+    const buffer = book.fileData instanceof ArrayBuffer
+      ? book.fileData.slice(0)
+      : book.fileData;
+
     const epubBook = ePub();
-    bookRef.current = epubBook;
-    
-    const buffer = book.fileData.slice(0);
+    epubBookRef.current = epubBook;
     let isMounted = true;
 
-    const initBook = async () => {
-      await epubBook.open(buffer);
-      if (!isMounted) return;
+    const init = async () => {
+      try {
+        await epubBook.open(buffer as ArrayBuffer);
+        if (!isMounted) return;
 
-      const rendition = epubBook.renderTo(containerRef.current!, {
-        width: "100%",
-        height: "100%",
-        spread: "always",
-        flow: "paginated",
-        manager: "continuous"
-      });
-      renditionRef.current = rendition;
+        // Wait for the spine to be fully parsed before doing anything
+        await epubBook.loaded.spine;
+        if (!isMounted) return;
 
-      applyTheme(rendition);
+        const rendition = epubBook.renderTo(containerRef.current!, {
+          width: "100%",
+          height: "100%",
+          spread: "always",
+          flow: "paginated",
+          // Do NOT set manager:"continuous" — it conflicts with paginated+spread
+        });
+        renditionRef.current = rendition;
 
-      rendition.on("relocated", (location: Location) => {
-        if (book.id) {
-          updateReadingProgress(book.id, location.start.cfi);
+        // Register and select themes
+        Object.entries(THEME_STYLES).forEach(([name, styles]) => {
+          rendition.themes.register(name, styles);
+        });
+        rendition.themes.select(theme);
+
+        // Track relocated position
+        rendition.on("relocated", (location: any) => {
+          if (!isMounted) return;
+          if (book.id) {
+            updateReadingProgress(book.id, location.start.cfi).catch(() => {});
+          }
+
+          // Chapter title from navigation
+          try {
+            const navItem = epubBook.navigation?.get(location.start.href);
+            if (navItem) setChapterTitle(navItem.label.trim());
+          } catch {
+            // navigation may not be ready yet
+          }
+
+          // Progress percentage
+          try {
+            if (epubBook.locations && epubBook.locations.length() > 0) {
+              const pct = epubBook.locations.percentageFromCfi(location.start.cfi);
+              setProgress(`${Math.round(pct * 100)}%`);
+            }
+          } catch {
+            // locations not generated yet
+          }
+        });
+
+        // Text selection → highlight picker
+        rendition.on("selected", (cfiRange: string, contents: any) => {
+          if (!isMounted) return;
+          try {
+            const sel = contents.window.getSelection();
+            if (!sel || sel.rangeCount === 0) return;
+            const rect = sel.getRangeAt(0).getBoundingClientRect();
+            setSelection({ cfiRange, contents, rect });
+          } catch {
+            // ignore
+          }
+        });
+
+        // Load table of contents
+        epubBook.loaded.navigation
+          .then((nav) => {
+            if (isMounted) setToc(nav.toc as { label: string; href: string }[]);
+          })
+          .catch(() => {});
+
+        // Display at saved position or beginning
+        await rendition.display(book.currentLocation || undefined);
+        if (!isMounted) return;
+
+        // Generate locations for progress — only after display is ready,
+        // wrapped in try/catch since it's non-critical
+        try {
+          await epubBook.locations.generate(1600);
+        } catch {
+          // Locations are a nice-to-have; don't break the reader if this fails
         }
-        
-        const navItem = epubBook.navigation.get(location.start.href);
-        if (navItem) {
-          setChapterTitle(navItem.label.trim());
-        }
-
-        if (epubBook.locations.length() > 0) {
-          const percentage = epubBook.locations.percentageFromCfi(location.start.cfi);
-          setProgress(`${Math.round(percentage * 100)}%`);
-        }
-      });
-
-      rendition.on("selected", (cfiRange: string, contents: any) => {
-        // Find selection rect to position popover
-        const range = contents.window.getSelection().getRangeAt(0);
-        const rect = range.getBoundingClientRect();
-        
-        setSelection({ cfiRange, contents, rect });
-      });
-
-      epubBook.loaded.navigation.then(nav => {
-        if (isMounted) setToc(nav.toc);
-      });
-
-      await rendition.display(book.currentLocation || undefined);
-      await epubBook.locations.generate(1600);
+      } catch (err) {
+        console.error("EPUB init error:", err);
+      }
     };
 
-    initBook();
+    init();
 
     return () => {
       isMounted = false;
-      if (renditionRef.current) renditionRef.current.destroy();
-      if (bookRef.current) bookRef.current.destroy();
+      try { renditionRef.current?.destroy(); } catch {}
+      try { epubBookRef.current?.destroy(); } catch {}
+      renditionRef.current = null;
+      epubBookRef.current = null;
     };
-  }, [book, applyTheme]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book.id]);
 
-  const nextPage = () => renditionRef.current?.next();
-  const prevPage = () => renditionRef.current?.prev();
-
+  // Arrow key navigation
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") nextPage();
-      if (e.key === "ArrowLeft") prevPage();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") renditionRef.current?.next();
+      if (e.key === "ArrowLeft") renditionRef.current?.prev();
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
   const handleSaveHighlight = async (color: string) => {
     if (!selection || !book.id) return;
-    
-    // Hacky way to get selected text
-    const text = selection.contents.window.getSelection().toString();
-    
-    await addHighlight({
-      bookId: book.id,
-      cfi: selection.cfiRange,
-      text,
-      color,
-      createdAt: new Date()
-    });
-    
-    // Clear selection
-    selection.contents.window.getSelection().removeAllRanges();
+    try {
+      const text = selection.contents.window.getSelection()?.toString() ?? "";
+      await addHighlight({
+        bookId: book.id,
+        cfi: selection.cfiRange,
+        text,
+        color,
+        createdAt: new Date(),
+      });
+      renditionRef.current?.annotations.add(
+        "highlight",
+        selection.cfiRange,
+        {},
+        undefined,
+        "hl",
+        { fill: color, "fill-opacity": "0.35" }
+      );
+      selection.contents.window.getSelection()?.removeAllRanges();
+    } catch (err) {
+      console.error("Failed to save highlight:", err);
+    }
     setSelection(null);
   };
 
   return (
     <div className="w-full h-full relative flex items-center justify-center">
-      <div className="absolute left-0 top-0 bottom-0 w-1/6 z-10 cursor-pointer" onClick={prevPage} />
-      <div className="absolute right-0 top-0 bottom-0 w-1/6 z-10 cursor-pointer" onClick={nextPage} />
-      
-      <div ref={containerRef} className="w-full h-[85vh] max-w-6xl px-12" />
+      {/* Click zones for prev/next */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[10%] z-10 cursor-pointer"
+        onClick={() => renditionRef.current?.prev()}
+      />
+      <div
+        className="absolute right-0 top-0 bottom-0 w-[10%] z-10 cursor-pointer"
+        onClick={() => renditionRef.current?.next()}
+      />
 
-      {/* Chapter & Progress */}
-      <div className="absolute bottom-6 left-12 text-sm text-muted-foreground/60 font-serif z-20 flex items-center gap-4">
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
-              <List className="w-4 h-4" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[300px] sm:w-[400px]">
-            <SheetHeader>
-              <SheetTitle className="font-serif">Table of Contents</SheetTitle>
-            </SheetHeader>
-            <div className="mt-6 space-y-2 overflow-y-auto max-h-[80vh] pr-4">
-              {toc.map((item, idx) => (
-                <div 
-                  key={idx} 
-                  className="cursor-pointer text-sm py-1 hover:text-primary transition-colors line-clamp-1"
-                  onClick={() => {
-                    renditionRef.current?.display(item.href);
-                  }}
-                >
-                  {item.label}
-                </div>
-              ))}
-            </div>
-          </SheetContent>
-        </Sheet>
-        {chapterTitle}
-      </div>
-      <div className="absolute bottom-6 right-12 text-sm text-muted-foreground/60 font-mono z-20">
-        {progress}
+      {/* EPUB render target */}
+      <div ref={containerRef} className="w-full h-[85vh] max-w-6xl px-8" />
+
+      {/* Bottom bar: TOC + chapter + progress */}
+      <div className="absolute bottom-5 left-10 right-10 flex items-center justify-between z-20 pointer-events-none">
+        <div className="flex items-center gap-3 pointer-events-auto">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full opacity-50 hover:opacity-100">
+                <List className="w-4 h-4" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[280px]">
+              <SheetHeader>
+                <SheetTitle className="font-serif text-base">Table of Contents</SheetTitle>
+              </SheetHeader>
+              <div className="mt-4 space-y-1 overflow-y-auto max-h-[80vh] pr-2">
+                {toc.map((item, idx) => (
+                  <button
+                    key={idx}
+                    className="w-full text-left text-sm py-1.5 px-2 rounded hover:bg-muted transition-colors line-clamp-1"
+                    onClick={() => renditionRef.current?.display(item.href)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </SheetContent>
+          </Sheet>
+          <span className="text-xs text-muted-foreground/60 font-serif">{chapterTitle}</span>
+        </div>
+        <span className="text-xs text-muted-foreground/50 font-mono">{progress}</span>
       </div>
 
-      {/* Highlight Color Picker Popover */}
+      {/* Highlight color picker */}
       {selection && selection.rect && (
-        <div 
-          className="absolute z-50 bg-popover text-popover-foreground shadow-lg rounded-full px-3 py-2 flex gap-2 border border-border/50 animate-in zoom-in-95 duration-200"
+        <div
+          className="fixed z-50 bg-popover border border-border/50 shadow-lg rounded-full px-3 py-2 flex items-center gap-2"
           style={{
-            top: `${selection.rect.top - 50}px`,
-            left: `${selection.rect.left + (selection.rect.width / 2)}px`,
-            transform: 'translateX(-50%)'
+            top: `${selection.rect.top - 56}px`,
+            left: `${selection.rect.left + selection.rect.width / 2}px`,
+            transform: "translateX(-50%)",
           }}
         >
-          {['#fde047', '#86efac', '#f9a8d4', '#93c5fd'].map(color => (
+          {[
+            { label: "Yellow", color: "#fde047" },
+            { label: "Green", color: "#86efac" },
+            { label: "Pink", color: "#f9a8d4" },
+            { label: "Blue", color: "#93c5fd" },
+          ].map(({ label, color }) => (
             <button
               key={color}
-              className="w-6 h-6 rounded-full hover:scale-110 transition-transform shadow-sm"
+              title={label}
+              data-testid={`highlight-color-${label.toLowerCase()}`}
+              className="w-6 h-6 rounded-full hover:scale-125 transition-transform shadow-sm ring-1 ring-black/10"
               style={{ backgroundColor: color }}
               onClick={() => handleSaveHighlight(color)}
             />
           ))}
-          <div className="w-px h-6 bg-border mx-1" />
-          <button 
-            className="text-xs font-medium px-2 hover:opacity-70"
+          <div className="w-px h-5 bg-border mx-1" />
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1"
             onClick={() => {
-              selection.contents.window.getSelection().removeAllRanges();
+              try { selection.contents.window.getSelection()?.removeAllRanges(); } catch {}
               setSelection(null);
             }}
           >

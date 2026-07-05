@@ -6,10 +6,10 @@ export interface Book {
   author: string;
   format: "epub" | "pdf";
   coverUrl?: string;
-  fileData: ArrayBuffer;  // store raw file bytes
+  fileData: ArrayBuffer;
   addedAt: Date;
   lastOpenedAt?: Date;
-  currentLocation?: string; // epub CFI or pdf page number string
+  currentLocation?: string;
   isFavorite: boolean;
   totalPages?: number;
 }
@@ -17,10 +17,11 @@ export interface Book {
 export interface Highlight {
   id?: number;
   bookId: number;
-  cfi: string;           // epub CFI range or pdf "page:x1,y1,x2,y2"
+  cfi: string;
   text: string;
-  color: string;         // "yellow" | "green" | "pink" | "blue"
+  color: string;
   createdAt: Date;
+  note?: string;
 }
 
 export interface Bookmark {
@@ -31,10 +32,23 @@ export interface Bookmark {
   createdAt: Date;
 }
 
-class PageTurnDB extends Dexie {
+export interface Note {
+  id?: number;
+  bookId: number;
+  highlightId?: number;
+  title: string;
+  content: string;
+  quote?: string;
+  tags?: string[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+class SocratusDB extends Dexie {
   books!: Table<Book>;
   highlights!: Table<Highlight>;
   bookmarks!: Table<Bookmark>;
+  notes!: Table<Note>;
 
   constructor() {
     super("PageTurnDB");
@@ -43,7 +57,13 @@ class PageTurnDB extends Dexie {
       highlights: "++id, bookId, createdAt",
       bookmarks: "++id, bookId",
     });
+    this.version(2).stores({
+      books: "++id, addedAt, lastOpenedAt, isFavorite",
+      highlights: "++id, bookId, createdAt, color",
+      bookmarks: "++id, bookId",
+      notes: "++id, bookId, highlightId, createdAt",
+    });
   }
 }
 
-export const db = new PageTurnDB();
+export const db = new SocratusDB();

@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface ReaderSettings {
@@ -11,6 +13,7 @@ export interface ReaderSettings {
   spread: "single" | "double";
   flow: "paginated" | "scrolled";
   voiceSpeed: number;
+  voiceName: string;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -20,6 +23,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   spread: "double",
   flow: "paginated",
   voiceSpeed: 1.0,
+  voiceName: "",
 };
 
 interface SettingsPanelProps {
@@ -72,6 +76,19 @@ export function SettingsPanel({
   onVoicePlay,
   onVoiceStop,
 }: SettingsPanelProps) {
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  // Load system voices — they may load asynchronously
+  useEffect(() => {
+    const load = () => {
+      const v = window.speechSynthesis?.getVoices() ?? [];
+      if (v.length) setVoices(v);
+    };
+    load();
+    window.speechSynthesis?.addEventListener("voiceschanged", load);
+    return () => window.speechSynthesis?.removeEventListener("voiceschanged", load);
+  }, []);
+
   const set = <K extends keyof ReaderSettings>(key: K, value: ReaderSettings[K]) =>
     onChange({ ...settings, [key]: value });
 
@@ -80,6 +97,11 @@ export function SettingsPanel({
     sans: "Inter, sans-serif",
     mono: "Menlo, monospace",
   }[settings.fontFamily];
+
+  const englishVoices = voices.filter((v) =>
+    v.lang.startsWith("en") || v.lang === ""
+  );
+  const otherVoices = voices.filter((v) => !v.lang.startsWith("en") && v.lang !== "");
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -98,34 +120,28 @@ export function SettingsPanel({
             <label className="text-sm font-medium">Font Style</label>
             <OptionRow
               options={[
-                { label: "Serif", value: "serif" as const },
-                { label: "Sans", value: "sans" as const },
-                { label: "Mono", value: "mono" as const },
+                { label: "Serif",  value: "serif" as const },
+                { label: "Sans",   value: "sans"  as const },
+                { label: "Mono",   value: "mono"  as const },
               ]}
               value={settings.fontFamily}
               onChange={(v) => set("fontFamily", v)}
             />
-            <p className="text-xs text-muted-foreground mt-1">{fontFamilyLabel}</p>
+            <p className="text-xs text-muted-foreground">{fontFamilyLabel}</p>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">Font Size</label>
-              <span className="text-sm text-muted-foreground tabular-nums">
-                {settings.fontSize}px
-              </span>
+              <span className="text-sm text-muted-foreground tabular-nums">{settings.fontSize}px</span>
             </div>
             <Slider
-              min={12}
-              max={28}
-              step={1}
+              min={12} max={28} step={1}
               value={[settings.fontSize]}
               onValueChange={([v]) => set("fontSize", v)}
-              className="w-full"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Small</span>
-              <span>Large</span>
+              <span>Small</span><span>Large</span>
             </div>
           </div>
 
@@ -133,9 +149,9 @@ export function SettingsPanel({
             <label className="text-sm font-medium">Line Spacing</label>
             <OptionRow
               options={[
-                { label: "Tight", value: "normal" as const },
+                { label: "Tight",  value: "normal"  as const },
                 { label: "Normal", value: "relaxed" as const },
-                { label: "Loose", value: "loose" as const },
+                { label: "Loose",  value: "loose"   as const },
               ]}
               value={settings.lineSpacing}
               onChange={(v) => set("lineSpacing", v)}
@@ -183,9 +199,52 @@ export function SettingsPanel({
           <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Voice Reader
           </h3>
+
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Reads the current page aloud using your device's text-to-speech engine.
+            Reads the current page aloud. Choose a voice from your device's speech engine.
           </p>
+
+          {voices.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Voice</label>
+              <Select
+                value={settings.voiceName || "__default__"}
+                onValueChange={(v) => set("voiceName", v === "__default__" ? "" : v)}
+              >
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="System default" />
+                </SelectTrigger>
+                <SelectContent className="max-h-64">
+                  <SelectItem value="__default__">System default</SelectItem>
+                  {englishVoices.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        English
+                      </div>
+                      {englishVoices.map((v) => (
+                        <SelectItem key={v.name} value={v.name}>
+                          {v.name.replace(/\s*\(.*?\)/g, "")}
+                          {v.localService ? "" : " ·"}
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+                  {otherVoices.length > 0 && (
+                    <>
+                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Other Languages
+                      </div>
+                      {otherVoices.map((v) => (
+                        <SelectItem key={v.name} value={v.name}>
+                          {v.name} ({v.lang})
+                        </SelectItem>
+                      ))}
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="flex gap-2">
             <Button
@@ -200,22 +259,18 @@ export function SettingsPanel({
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Reading Speed</label>
+              <label className="text-sm font-medium">Speed</label>
               <span className="text-sm text-muted-foreground tabular-nums">
                 {settings.voiceSpeed.toFixed(1)}×
               </span>
             </div>
             <Slider
-              min={0.5}
-              max={2.0}
-              step={0.1}
+              min={0.5} max={2.0} step={0.1}
               value={[settings.voiceSpeed]}
               onValueChange={([v]) => set("voiceSpeed", v)}
-              className="w-full"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>0.5× Slow</span>
-              <span>2.0× Fast</span>
+              <span>0.5× Slow</span><span>2.0× Fast</span>
             </div>
           </div>
         </section>
@@ -229,10 +284,7 @@ export function SettingsPanel({
           </h3>
           <div className="rounded-lg bg-muted/50 p-3 space-y-1">
             <p className="text-xs text-muted-foreground leading-relaxed">
-              <span className="font-medium text-foreground">Double-click</span> any word while reading to instantly look up its definition.
-            </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Definitions are fetched from the Free Dictionary API — no account needed.
+              <span className="font-medium text-foreground">Double-click</span> any word while reading to look up its definition. The panel stays open until you close it.
             </p>
           </div>
         </section>

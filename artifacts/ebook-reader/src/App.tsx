@@ -4,20 +4,24 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
-import LibraryPage from "@/pages/library";
-import FavoritesPage from "@/pages/favorites";
-import RecentPage from "@/pages/recent";
-import ReaderPage from "@/pages/reader";
+import LibraryPage    from "@/pages/library";
+import FavoritesPage  from "@/pages/favorites";
+import RecentPage     from "@/pages/recent";
+import ReaderPage     from "@/pages/reader";
+import HighlightsPage from "@/pages/highlights";
+import NotebookPage   from "@/pages/notebook";
 
 const queryClient = new QueryClient();
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={LibraryPage} />
-      <Route path="/favorites" component={FavoritesPage} />
-      <Route path="/recent" component={RecentPage} />
-      <Route path="/read/:bookId" component={ReaderPage} />
+      <Route path="/"           component={LibraryPage}    />
+      <Route path="/favorites"  component={FavoritesPage}  />
+      <Route path="/recent"     component={RecentPage}     />
+      <Route path="/highlights" component={HighlightsPage} />
+      <Route path="/notebook"   component={NotebookPage}   />
+      <Route path="/read/:bookId" component={ReaderPage}   />
       <Route component={NotFound} />
     </Switch>
   );

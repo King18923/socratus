@@ -1,22 +1,42 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, Link } from "wouter";
 import { useBook, toggleFavorite } from "@/hooks/use-db";
 import { EPUBReader } from "@/components/reader/epub-reader";
 import { PDFReader } from "@/components/reader/pdf-reader";
-import { ArrowLeft, Moon, Sun, Sunset, Star, Settings } from "lucide-react";
+import { SettingsPanel, DEFAULT_SETTINGS, type ReaderSettings } from "@/components/reader/settings-panel";
+import { ArrowLeft, Moon, Sun, Sunset, Star, Settings, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 
 type Theme = "day" | "sepia" | "night";
 
+const THEME_BG: Record<Theme, string> = {
+  day:   "bg-white",
+  sepia: "bg-[#f4ece0]",
+  night: "bg-[#1c1917]",
+};
+
+const THEME_TOOLBAR: Record<Theme, string> = {
+  day:   "bg-white/80 text-stone-800 border-stone-200",
+  sepia: "bg-[#f4ece0]/90 text-amber-950 border-amber-200",
+  night: "bg-[#1c1917]/90 text-stone-200 border-stone-700",
+};
+
 export default function ReaderPage() {
   const params = useParams();
   const id = parseInt(params.bookId || "", 10);
   const book = useBook(id);
+
   const [theme, setTheme] = useState<Theme>("day");
   const [showToolbar, setShowToolbar] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<ReaderSettings>(DEFAULT_SETTINGS);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
-  // Auto-theme based on time
+  // Ref so epub-reader can expose a "get current page text" function
+  const getPageTextRef = useRef<(() => string) | null>(null);
+
+  // Auto-theme based on time of day
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour >= 6 && hour < 18) setTheme("day");
@@ -24,101 +44,173 @@ export default function ReaderPage() {
     else setTheme("night");
   }, []);
 
-  // Auto hide toolbar
+  // Auto-hide toolbar
   useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    const handleMouseMove = () => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const show = () => {
       setShowToolbar(true);
       clearTimeout(timeout);
-      timeout = setTimeout(() => setShowToolbar(false), 2500);
+      timeout = setTimeout(() => setShowToolbar(false), 2800);
     };
-    
-    window.addEventListener("mousemove", handleMouseMove);
-    timeout = setTimeout(() => setShowToolbar(false), 2500);
-    
+    window.addEventListener("mousemove", show);
+    timeout = setTimeout(() => setShowToolbar(false), 2800);
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mousemove", show);
       clearTimeout(timeout);
     };
   }, []);
 
-  if (book === undefined) return null;
-  if (book === null) return <div>Book not found</div>;
+  // Stop speech when unmounting
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
 
-  const handleToggleFavorite = () => {
-    toggleFavorite(book);
-  };
+  if (book === undefined) return null;
+  if (book === null) {
+    return (
+      <div className="h-[100dvh] flex items-center justify-center text-muted-foreground">
+        Book not found.{" "}
+        <Link href="/" className="underline ml-1">
+          Go back
+        </Link>
+      </div>
+    );
+  }
 
   const cycleTheme = () => {
-    const themes: Theme[] = ["day", "sepia", "night"];
-    const idx = themes.indexOf(theme);
-    setTheme(themes[(idx + 1) % themes.length]);
+    const order: Theme[] = ["day", "sepia", "night"];
+    setTheme((t) => order[(order.indexOf(t) + 1) % order.length]);
   };
 
-  const bgClasses = {
-    day: "bg-[#ffffff]",
-    sepia: "bg-[#f4ece0]",
-    night: "bg-[#1a1a1a]"
+  const handleVoicePlay = () => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const text = getPageTextRef.current?.() ?? "";
+    if (!text.trim()) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = settings.voiceSpeed;
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+  };
+
+  const handleVoiceStop = () => {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
   };
 
   return (
-    <div className={`h-[100dvh] w-full overflow-hidden transition-colors duration-700 ${bgClasses[theme]}`}>
-      
+    <div
+      className={`h-[100dvh] w-full overflow-hidden transition-colors duration-500 ${THEME_BG[theme]}`}
+    >
+      {/* Toolbar */}
       <AnimatePresence>
         {showToolbar && (
-          <motion.div 
-            initial={{ y: -100, opacity: 0 }}
+          <motion.header
+            initial={{ y: -64, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: -100, opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className={`absolute top-0 left-0 right-0 h-16 z-50 px-6 flex items-center justify-between
-              ${theme === 'night' ? 'text-white/80 bg-black/40' : 'text-black/70 bg-white/40'}
-              backdrop-blur-md border-b border-black/5`}
+            exit={{ y: -64, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className={`absolute top-0 left-0 right-0 h-14 z-50 px-5 flex items-center justify-between
+              backdrop-blur-md border-b ${THEME_TOOLBAR[theme]}`}
           >
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" asChild className="rounded-full">
+            <div className="flex items-center gap-3 min-w-0">
+              <Button variant="ghost" size="icon" className="rounded-full flex-shrink-0" asChild>
                 <Link href="/">
-                  <ArrowLeft className="w-5 h-5" />
+                  <ArrowLeft className="w-4 h-4" />
                 </Link>
               </Button>
-              <h1 className="font-serif font-medium line-clamp-1 max-w-md">{book.title}</h1>
+              <h1 className="font-serif font-medium text-sm line-clamp-1">{book.title}</h1>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button 
-                variant="ghost" 
-                size="icon" 
+            <div className="flex items-center gap-1">
+              {/* Favourite */}
+              <Button
+                variant="ghost"
+                size="icon"
                 className="rounded-full"
-                onClick={handleToggleFavorite}
+                onClick={() => toggleFavorite(book)}
+                data-testid="button-favorite"
               >
-                <Star className={`w-5 h-5 ${book.isFavorite ? 'fill-yellow-500 text-yellow-500' : ''}`} />
+                <Star
+                  className={`w-4 h-4 ${book.isFavorite ? "fill-amber-500 text-amber-500" : ""}`}
+                />
               </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
+
+              {/* Theme cycle */}
+              <Button
+                variant="ghost"
+                size="icon"
                 className="rounded-full"
                 onClick={cycleTheme}
+                data-testid="button-theme"
+                title={`Theme: ${theme}`}
               >
-                {theme === 'day' && <Sun className="w-5 h-5" />}
-                {theme === 'sepia' && <Sunset className="w-5 h-5" />}
-                {theme === 'night' && <Moon className="w-5 h-5" />}
+                {theme === "day"   && <Sun   className="w-4 h-4" />}
+                {theme === "sepia" && <Sunset className="w-4 h-4" />}
+                {theme === "night" && <Moon  className="w-4 h-4" />}
               </Button>
-              <Button variant="ghost" size="icon" className="rounded-full">
-                <Settings className="w-5 h-5" />
+
+              {/* Voice reader */}
+              {book.format === "epub" && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full"
+                  onClick={isSpeaking ? handleVoiceStop : handleVoicePlay}
+                  data-testid="button-voice"
+                  title={isSpeaking ? "Stop reading" : "Read aloud"}
+                >
+                  {isSpeaking ? (
+                    <VolumeX className="w-4 h-4 text-primary" />
+                  ) : (
+                    <Volume2 className="w-4 h-4" />
+                  )}
+                </Button>
+              )}
+
+              {/* Settings */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full"
+                onClick={() => setSettingsOpen(true)}
+                data-testid="button-settings"
+              >
+                <Settings className="w-4 h-4" />
               </Button>
             </div>
-          </motion.div>
+          </motion.header>
         )}
       </AnimatePresence>
 
-      <div className="w-full h-full pt-8">
+      {/* Reader content */}
+      <div className="w-full h-full pt-14">
         {book.format === "epub" ? (
-          <EPUBReader book={book} theme={theme} />
+          <EPUBReader
+            book={book}
+            theme={theme}
+            settings={settings}
+            getPageTextRef={getPageTextRef}
+          />
         ) : (
-          <PDFReader book={book} theme={theme} />
+          <PDFReader
+            book={book}
+            theme={theme}
+            settings={settings}
+          />
         )}
       </div>
 
+      {/* Settings panel */}
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onChange={setSettings}
+        isSpeaking={isSpeaking}
+        onVoicePlay={handleVoicePlay}
+        onVoiceStop={handleVoiceStop}
+      />
     </div>
   );
 }

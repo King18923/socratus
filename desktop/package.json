@@ -1,6 +1,11 @@
 {
   "name": "socratus-desktop",
   "version": "1.0.0",
+  "author": "King David Maha",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/King18923/socratus.git"
+  },
   "description": "Socratus – premium desktop ebook reader",
   "type": "module",
   "main": "dist-electron/main.js",

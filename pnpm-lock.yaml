@@ -167,6 +167,9 @@ importers:
       '@rollup/rollup-win32-x64-msvc':
         specifier: 4.62.2
         version: 4.62.2
+      '@tailwindcss/oxide-win32-x64-msvc':
+        specifier: 4.3.2
+        version: 4.3.2
       lightningcss-win32-x64-msvc:
         specifier: 1.32.0
         version: 1.32.0
@@ -1837,6 +1840,12 @@ packages:
       - '@tybys/wasm-util'
       - '@emnapi/wasi-threads'
       - tslib
+
+  '@tailwindcss/oxide-win32-x64-msvc@4.3.2':
+    resolution: {integrity: sha512-QI9BO7KlNZsp2GuO0jwAAj5jCDABOKXRkCk2XuKTSaNEFSdfzqswYVTtCHBNKHLsqyjFyFkqlDiwkNbTYSssMQ==}
+    engines: {node: '>= 20'}
+    cpu: [x64]
+    os: [win32]
 
   '@tailwindcss/oxide@4.3.2':
     resolution: {integrity: sha512-z8ZgnzX8gdNoWLBLqBPoh/sjnxkwvf9ZuWjnO0l0yIzbLa5/9S+eC5QxGZKRobVHIC3/1BoMWjHblqWjcgFgag==}
@@ -5887,6 +5896,9 @@ snapshots:
     optional: true
 
   '@tailwindcss/oxide-wasm32-wasi@4.3.2':
+    optional: true
+
+  '@tailwindcss/oxide-win32-x64-msvc@4.3.2':
     optional: true
 
   '@tailwindcss/oxide@4.3.2':

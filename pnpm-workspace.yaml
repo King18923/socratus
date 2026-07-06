@@ -39,6 +39,7 @@ packages:
   - lib/*
   - lib/integrations/*
   - scripts
+  - 'desktop'
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.21
@@ -161,5 +162,18 @@ overrides:
 
 allowBuilds:
   core-js: true
+  electron: true
   es5-ext: true
   esbuild: true
+
+# Add the architecture parameters below it (ensure packages keys are unique):
+supportedArchitectures:
+  os:
+    - current
+    - win32
+    - linux
+    - darwin
+  cpu:
+    - current
+    - x64
+    - arm64

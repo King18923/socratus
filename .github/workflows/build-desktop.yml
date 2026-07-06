@@ -49,7 +49,7 @@ jobs:
 
       # Install workspace deps (ebook-reader web app)
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       # Build the Vite web app for Electron (no PORT/BASE_PATH needed)
       - name: Build web app

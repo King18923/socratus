@@ -12,6 +12,9 @@
   "devDependencies": {
     "prettier": "^3.8.4",
     "typescript": "~5.9.3"
-  }
+  },
+  "optionalDependencies": {
+  "@rollup/rollup-win32-x64-msvc": "4.62.2"
+}
 }
 

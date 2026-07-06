@@ -72,7 +72,7 @@ function createWindow(): void {
   mainWindow.loadFile(path.join(appDir, "index.html")).catch((err) => {
     console.error("Failed to load app:", err);
   });
-
+  mainWindow.webContents.openDevTools();
   // Show only once fully ready — prevents white flash
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();

@@ -28,14 +28,15 @@
   "build": {
     "appId": "com.socratus.app",
     "productName": "Socratus",
-    "copyright": "Copyright © 2025 Socratus",
+    "copyright": "Copyright © 2026 Socratus",
     "directories": {
       "output": "dist",
       "buildResources": "build-resources"
     },
     "files": [
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "../artifacts/ebook-reader/dist/**/*"
     ],
     "extraResources": [
       {

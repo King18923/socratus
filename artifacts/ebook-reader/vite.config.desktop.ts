@@ -26,7 +26,6 @@ export default defineConfig({
           "pdf":   ["react-pdf", "pdfjs-dist"],
           "radix": [
             "@radix-ui/react-dialog",
-            "@radix-ui/react-sheet",
             "@radix-ui/react-select",
             "@radix-ui/react-tabs",
             "@radix-ui/react-context-menu",

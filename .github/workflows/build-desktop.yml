@@ -56,28 +56,25 @@ jobs:
         working-directory: artifacts/ebook-reader
         run: pnpm vite build --config vite.config.desktop.ts
 
-      # Install Electron and electron-builder (desktop package is standalone)
-      - name: Install desktop dependencies
-        working-directory: desktop
-        run: npm install
+  
 
       # Compile TypeScript Electron main process
       - name: Compile Electron main
         working-directory: desktop
-        run: npx tsc -p tsconfig.json
+        run: pnpm exec tsc -p tsconfig.json
 
       # Package with electron-builder (platform-specific)
       - name: Package (Windows)
         if: matrix.platform == 'windows'
         working-directory: desktop
-        run: npx electron-builder --win --x64
+        run: pnpm exec electron-builder --win --x64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Package (macOS)
         if: matrix.platform == 'macos'
         working-directory: desktop
-        run: npx electron-builder --mac
+        run: pnpm exec electron-builder --mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -85,7 +82,7 @@ jobs:
       - name: Package (Linux)
         if: matrix.platform == 'linux'
         working-directory: desktop
-        run: npx electron-builder --linux
+        run: pnpm --linux
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
